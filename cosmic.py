@@ -24,14 +24,14 @@ class UltraScanner(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Crystal Control Center (Ultra 11.0)")
+        self.setWindowTitle("Crystal Control Center (Ultra 12.0 - Target Lock)")
         self.resize(550, 850)
         
         self.fs = 44100
         self.buffer_size = 2048
         
         self.ffmpeg_process = None
-        self.is_scanning = False
+        self.is_receiving = False # Umbenannt, da es jetzt der generelle Empfang ist
         
         self.hit_counter = 0
         self.last_found_idx = -1
@@ -74,7 +74,7 @@ class UltraScanner(QtWidgets.QMainWindow):
         layout.addWidget(tx_group)
 
         # --- Empfänger-Radar (RX) ---
-        rx_group = QtWidgets.QGroupBox("🔍 Empfänger-Radar (RX)")
+        rx_group = QtWidgets.QGroupBox("🔍 Empfänger (RX)")
         rx_layout = QtWidgets.QVBoxLayout()
         
         self.autotune_btn = QtWidgets.QPushButton("🎯 AUTO-TUNE (Letztes Signal anvisieren & scharfschalten)")
@@ -107,26 +107,31 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.thresh_spinbox.setValue(6.0)
         thresh_layout.addWidget(self.thresh_spinbox)
         rx_layout.addLayout(thresh_layout)
+        
+        # NEU: Die Radar-Checkbox
+        self.radar_checkbox = QtWidgets.QCheckBox("🌐 Breitband-Radar (Alle Signale loggen)")
+        self.radar_checkbox.setChecked(True) # Standardmäßig an
+        self.radar_checkbox.setStyleSheet("color: #D4AF37; font-weight: bold; margin-top: 5px;")
+        rx_layout.addWidget(self.radar_checkbox)
+        
         rx_group.setLayout(rx_layout)
         layout.addWidget(rx_group)
 
-        self.scan_btn = QtWidgets.QPushButton("🌐 DUAL-SCANNER & DECODER STARTEN")
-        self.scan_btn.setStyleSheet("padding: 10px; font-weight: bold;")
-        self.scan_btn.clicked.connect(self.toggle_scan)
-        layout.addWidget(self.scan_btn)
+        # HAUPTSCHALTER
+        self.receive_btn = QtWidgets.QPushButton("📻 EMPFÄNGER EINSCHALTEN (RX ON)")
+        self.receive_btn.setStyleSheet("padding: 10px; font-weight: bold;")
+        self.receive_btn.clicked.connect(self.toggle_receiver)
+        layout.addWidget(self.receive_btn)
 
         self.status_label = QtWidgets.QLabel("Status: Bereit")
         self.status_label.setStyleSheet("font-size: 14px; color: #D4AF37;")
         layout.addWidget(self.status_label)
 
-        # ==========================================
-        # NEU: Das Textfeld mit Lösch-Button
-        # ==========================================
+        # Textfeld mit Lösch-Button
         decode_layout = QtWidgets.QHBoxLayout()
-        
         self.decoded_label = QtWidgets.QLabel("👽 E.T. funkt: ")
         self.decoded_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #00FF00; background: black; padding: 5px;")
-        self.decoded_label.setWordWrap(True) # NEU: Bricht den Text um, statt das Fenster zu vergrößern!
+        self.decoded_label.setWordWrap(True) 
         decode_layout.addWidget(self.decoded_label, stretch=1)
         
         self.clear_btn = QtWidgets.QPushButton("🗑️ LÖSCHEN")
@@ -135,7 +140,6 @@ class UltraScanner(QtWidgets.QMainWindow):
         decode_layout.addWidget(self.clear_btn)
         
         layout.addLayout(decode_layout)
-        # ==========================================
 
         self.log_list = QtWidgets.QListWidget()
         layout.addWidget(QtWidgets.QLabel("📜 Kristall-Radar (Alle Signale):"))
@@ -150,7 +154,6 @@ class UltraScanner(QtWidgets.QMainWindow):
     def gui_update_decode(self, text):
         self.decoded_label.setText(text)
 
-    # NEU: Die Funktion für den Lösch-Button
     def clear_decoded_text(self):
         self.decoded_message = ""
         self.current_symbol = ""
@@ -159,9 +162,11 @@ class UltraScanner(QtWidgets.QMainWindow):
     def do_autotune(self):
         self.freq_spinbox.setValue(int(self.last_detected_freq))
         self.tol_spinbox.setValue(50)
-        self.clear_decoded_text() # Nutzt jetzt praktischerweise gleich die neue Lösch-Funktion
-        self.decoded_label.setText("👽 E.T. funkt: [AUTO-TUNE AKTIV - LAUSCHE...]")
-        self.status_label.setText(f"🎯 Auto-Tune: Gelockt auf {int(self.last_detected_freq)} Hz (Toleranz: 50Hz)")
+        # Wenn man Auto-Tune drückt, will man meistens Ruhe im Radar haben:
+        self.radar_checkbox.setChecked(False) 
+        self.clear_decoded_text() 
+        self.decoded_label.setText("👽 E.T. funkt: [AUTO-TUNE AKTIV - LAUSCHE AUF ZIEL...]")
+        self.status_label.setText(f"🎯 Auto-Tune: Gelockt auf {int(self.last_detected_freq)} Hz (Radar aus)")
 
     def start_ffmpeg_monitor(self):
         if getattr(sys, 'frozen', False):
@@ -186,7 +191,7 @@ class UltraScanner(QtWidgets.QMainWindow):
             cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NO_WINDOW
         )
-        self.status_label.setText("Status: 3D-Monitor läuft (Dual-Modus fähig)")
+        self.status_label.setText("Status: 3D-Monitor läuft")
 
     def transmit_message(self):
         text = self.msg_input.text().upper()
@@ -212,23 +217,24 @@ class UltraScanner(QtWidgets.QMainWindow):
                 
         self.status_label.setText("Status: Senden beendet.")
 
-    def toggle_scan(self):
-        self.is_scanning = not self.is_scanning
-        if self.is_scanning:
-            self.scan_btn.setText("🛑 DUAL-SCANNER STOPPEN")
-            self.status_label.setText("Status: Radar sucht & Decoder lauscht...")
-            self.clear_decoded_text() # Nachricht beim Neustart säubern
+    def toggle_receiver(self):
+        self.is_receiving = not self.is_receiving
+        if self.is_receiving:
+            self.receive_btn.setText("🛑 EMPFÄNGER AUSSCHALTEN")
+            self.status_label.setText("Status: Empfänger lauscht...")
+            self.clear_decoded_text() 
             self.hit_counter = 0
             self.stream = sd.InputStream(callback=self.audio_callback, channels=2, 
                                         samplerate=self.fs, blocksize=self.buffer_size)
             self.stream.start()
         else:
-            self.scan_btn.setText("🌐 DUAL-SCANNER & DECODER STARTEN")
+            self.receive_btn.setText("📻 EMPFÄNGER EINSCHALTEN (RX ON)")
+            self.status_label.setText("Status: Empfänger gestoppt.")
             if hasattr(self, 'stream'):
                 self.stream.stop()
 
     def audio_callback(self, indata, frames, time_info, status):
-        if not self.is_scanning or indata.shape[1] < 2: return 
+        if not self.is_receiving or indata.shape[1] < 2: return 
         
         left_ch, right_ch = indata[:, 0], indata[:, 1]
         fft_left = np.abs(np.fft.rfft(left_ch))[50:-50]
@@ -255,29 +261,34 @@ class UltraScanner(QtWidgets.QMainWindow):
 
         timestamp = QtCore.QDateTime.currentDateTime().toString("hh:mm:ss")
 
-        # ENGINE 1: DAS BREITBAND-RADAR
-        if is_signal_present:
-            if abs(peak_idx - self.last_found_idx) < 5:
-                self.hit_counter += 1
+        # ==========================================
+        # ENGINE 1: DAS BREITBAND-RADAR (Jetzt abschaltbar!)
+        # ==========================================
+        if self.radar_checkbox.isChecked():
+            if is_signal_present:
+                if abs(peak_idx - self.last_found_idx) < 5:
+                    self.hit_counter += 1
+                else:
+                    self.hit_counter = 1
+                self.last_found_idx = peak_idx
+                
+                if self.hit_counter == 3:
+                    self.last_detected_freq = current_freq
+                    
+                    if peak_l > peak_r * 1.2: direction = "⬆️ OBEN"
+                    elif peak_r > peak_l * 1.2: direction = "⬇️ UNTEN"
+                    else: direction = "⚖️ ZENTRUM"
+                    
+                    prefix = "🎯 ZIEL" if is_near_target else "⚡ FUND"
+                    log_text = f"[{timestamp}] {prefix}: {current_freq:.0f} Hz | {direction} (SNR: {snr:.1f})"
+                    
+                    self.signal_new_log.emit(log_text)
             else:
-                self.hit_counter = 1
-            self.last_found_idx = peak_idx
-            
-            if self.hit_counter == 3:
-                self.last_detected_freq = current_freq
-                
-                if peak_l > peak_r * 1.2: direction = "⬆️ OBEN"
-                elif peak_r > peak_l * 1.2: direction = "⬇️ UNTEN"
-                else: direction = "⚖️ ZENTRUM"
-                
-                prefix = "🎯 ZIEL" if is_near_target else "⚡ FUND"
-                log_text = f"[{timestamp}] {prefix}: {current_freq:.0f} Hz | {direction} (SNR: {snr:.1f})"
-                
-                self.signal_new_log.emit(log_text)
-        else:
-            self.hit_counter = 0
+                self.hit_counter = 0
 
-        # ENGINE 2: DER E.T. MORSE DECODER
+        # ==========================================
+        # ENGINE 2: DER E.T. MORSE DECODER (Läuft immer mit!)
+        # ==========================================
         if is_signal_present and is_near_target:
             self.signal_blocks += 1
             self.silence_blocks = 0
