@@ -3,6 +3,7 @@ import subprocess
 import numpy as np
 import sounddevice as sd
 import winsound
+import os
 from PyQt5 import QtWidgets, QtCore
 
 class UltraScanner(QtWidgets.QMainWindow):
@@ -73,19 +74,40 @@ class UltraScanner(QtWidgets.QMainWindow):
         layout.addWidget(self.log_list)
 
     def start_ffmpeg_monitor(self):
-        # FIX: showspectrum bleibt Gold-Feuer, aber Freqs und Waves zeigen jetzt BEIDE Piezos in Gold & Grün!
+        # 1. Den absoluten Pfad zur .exe oder zum Skript herausfinden
+        if getattr(sys, 'frozen', False):
+            # Wenn es als .exe läuft
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            # Wenn es als normales Python-Skript läuft
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # 2. Die exakten Pfade zu FFmpeg und FFplay bauen
+        ffmpeg_path = os.path.join(base_dir, "ffmpeg.exe")
+        ffplay_path = os.path.join(base_dir, "ffplay.exe")
+
+        # 3. Den Befehl mit den echten Pfaden (in Anführungszeichen, falls der Ordner Leerzeichen hat) zusammenbauen
         cmd = (
-            'ffmpeg -loglevel error -f dshow -i audio="Mikrofon (High Definition Audio Device)" '
+            f'"{ffmpeg_path}" -loglevel error -f dshow -i audio="Mikrofon (High Definition Audio Device)" '
             '-filter_complex "[0:a]highpass=f=20,asplit=4[a1][a2][a3][a4];'
             '[a1]showspectrum=s=809x500:mode=combined:color=fire:slide=scroll:scale=log[v1];'
             '[a2]showfreqs=s=809x500:mode=bar:colors=0xD4AF37|0x00FF00:ascale=log[v2];'
             '[a3]showwaves=s=809x500:mode=line:colors=0xD4AF37|0x00FF00[v3];'
             '[a4]avectorscope=s=809x500[v4];'
             '[v1][v2][v3][v4]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,format=yuv420p[out]" '
-            '-map "[out]" -f nut - | ffplay -f nut -i - -noborder'
+            f'-map "[out]" -f nut - | "{ffplay_path}" -f nut -i - -noborder'
         )
-        self.ffmpeg_process = subprocess.Popen(cmd, shell=True)
-        self.status_label.setText("Status: 3D-Monitor läuft")
+        
+        # 4. Der PyInstaller-Fix: Wir leiten die internen Pipes sauber um und unterdrücken Konsolen-Popups
+        self.ffmpeg_process = subprocess.Popen(
+            cmd, 
+            shell=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NO_WINDOW # Zwingt Windows, kein unsichtbares Fenster zu suchen
+        )
+        self.status_label.setText("Status: 3D-Monitor läuft (Portable Mode)")
 
     def toggle_scan(self):
         self.is_scanning = not self.is_scanning
