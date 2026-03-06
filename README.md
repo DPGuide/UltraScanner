@@ -32,3 +32,8 @@ Was passiert jetzt?
 Der PC rattert ein bis zwei Minuten. Danach findest du in deinem Ordner einen neuen Unterordner namens dist. 
 Darin liegt eine frische cosmic.exe. Das ist dein komplettes Python-Programm, lauffähig für jeden Windows-PC!***
 
+
+
+<img width="763" height="295" alt="image" src="https://github.com/user-attachments/assets/29fb83c2-2626-447f-a5c5-dc301fb72a07" />
+
+
