@@ -17,14 +17,13 @@ MORSE_CODE_DICT = {
     '4': '....-', '5': '.....', '6': '-....', '7': '--...', '8': '---..', 
     '9': '----.', '0': '-----', ' ': '/'
 }
-# Umgekehrte Liste für den Empfänger (Code -> Buchstabe)
 REVERSE_MORSE = {value: key for key, value in MORSE_CODE_DICT.items()}
 
 class UltraScanner(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Crystal Control Center (Morse-Modem Edition)")
-        self.resize(500, 750)
+        self.setWindowTitle("Crystal Control Center (Dual-Core E.T. Edition)")
+        self.resize(550, 800)
         
         self.fs = 44100
         self.buffer_size = 2048
@@ -32,7 +31,9 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.ffmpeg_process = None
         self.is_scanning = False
         
-        # Morse-Decoder Variablen
+        # Scanner & Decoder Variablen
+        self.hit_counter = 0
+        self.last_found_idx = -1
         self.signal_blocks = 0
         self.silence_blocks = 0
         self.current_symbol = ""
@@ -51,15 +52,13 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.mon_btn.clicked.connect(self.start_ffmpeg_monitor)
         layout.addWidget(self.mon_btn)
 
-        # --- NEU: Sende-Zentrale (TX) ---
+        # --- Sende-Zentrale (TX) ---
         tx_group = QtWidgets.QGroupBox("📡 Sende-Zentrale (TX)")
         tx_layout = QtWidgets.QVBoxLayout()
-        
         input_layout = QtWidgets.QHBoxLayout()
         self.msg_input = QtWidgets.QLineEdit()
-        self.msg_input.setPlaceholderText("TEXT EINGEBEN (z.B. HALLO)")
+        self.msg_input.setText("E T NACH HAUS TELEFONIEREN") # Der E.T. Test-String!
         input_layout.addWidget(self.msg_input)
-        
         self.send_btn = QtWidgets.QPushButton("MORSE SENDEN")
         self.send_btn.setStyleSheet("background-color: #00FF00; color: black; font-weight: bold;")
         self.send_btn.clicked.connect(self.transmit_message)
@@ -69,14 +68,26 @@ class UltraScanner(QtWidgets.QMainWindow):
         layout.addWidget(tx_group)
 
         # --- Empfänger-Einstellungen (RX) ---
+        rx_group = QtWidgets.QGroupBox("🔍 Empfänger-Radar (RX)")
+        rx_layout = QtWidgets.QVBoxLayout()
+        
         freq_layout = QtWidgets.QHBoxLayout()
         freq_layout.addWidget(QtWidgets.QLabel("🎯 Zielfrequenz (Hz):"))
         self.freq_spinbox = QtWidgets.QSpinBox()
         self.freq_spinbox.setRange(20, 22000)
-        self.freq_spinbox.setValue(1000) # 1000 Hz ist Standard für Morse-Töne
+        self.freq_spinbox.setValue(1000) 
         self.freq_spinbox.setSingleStep(100)
         freq_layout.addWidget(self.freq_spinbox)
-        layout.addLayout(freq_layout)
+        rx_layout.addLayout(freq_layout)
+
+        tol_layout = QtWidgets.QHBoxLayout()
+        tol_layout.addWidget(QtWidgets.QLabel("📏 Decoder-Toleranz (+/- Hz):"))
+        self.tol_spinbox = QtWidgets.QSpinBox()
+        self.tol_spinbox.setRange(1, 1000)
+        self.tol_spinbox.setValue(100)
+        self.tol_spinbox.setSingleStep(10)
+        tol_layout.addWidget(self.tol_spinbox)
+        rx_layout.addLayout(tol_layout)
 
         thresh_layout = QtWidgets.QHBoxLayout()
         thresh_layout.addWidget(QtWidgets.QLabel("🎚️ Squelch (SNR):"))
@@ -84,9 +95,12 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.thresh_spinbox.setRange(1.5, 100.0)
         self.thresh_spinbox.setValue(8.0)
         thresh_layout.addWidget(self.thresh_spinbox)
-        layout.addLayout(thresh_layout)
+        rx_layout.addLayout(thresh_layout)
+        rx_group.setLayout(rx_layout)
+        layout.addWidget(rx_group)
 
-        self.scan_btn = QtWidgets.QPushButton("🔍 MORSE-DECODER STARTEN (RX)")
+        self.scan_btn = QtWidgets.QPushButton("🌐 DUAL-SCANNER & DECODER STARTEN")
+        self.scan_btn.setStyleSheet("padding: 10px; font-weight: bold;")
         self.scan_btn.clicked.connect(self.toggle_scan)
         layout.addWidget(self.scan_btn)
 
@@ -94,13 +108,12 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.status_label.setStyleSheet("font-size: 14px; color: #D4AF37;")
         layout.addWidget(self.status_label)
 
-        # --- NEU: Live-Text Decoder ---
-        self.decoded_label = QtWidgets.QLabel("Eingehende Nachricht: ")
+        self.decoded_label = QtWidgets.QLabel("👽 E.T. funkt: ")
         self.decoded_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #00FF00; background: black; padding: 5px;")
         layout.addWidget(self.decoded_label)
 
         self.log_list = QtWidgets.QListWidget()
-        layout.addWidget(QtWidgets.QLabel("📜 Kristall-Logbuch:"))
+        layout.addWidget(QtWidgets.QLabel("📜 Kristall-Radar (Alle Signale):"))
         layout.addWidget(self.log_list)
 
     def start_ffmpeg_monitor(self):
@@ -126,7 +139,7 @@ class UltraScanner(QtWidgets.QMainWindow):
             cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NO_WINDOW
         )
-        self.status_label.setText("Status: 3D-Monitor läuft")
+        self.status_label.setText("Status: 3D-Monitor läuft (Dual-Modus fähig)")
 
     def transmit_message(self):
         text = self.msg_input.text().upper()
@@ -134,86 +147,120 @@ class UltraScanner(QtWidgets.QMainWindow):
         
         freq = self.freq_spinbox.value()
         self.status_label.setText(f"SENDEN: {text} auf {freq} Hz...")
-        QtWidgets.QApplication.processEvents() # UI updaten
         
-        # Einstellungen für die Morse-Geschwindigkeit
-        dot_time = 100 # ms
-        dash_time = 300 # ms
+        dot_time = 100 
+        dash_time = 300 
         
         for char in text:
+            QtWidgets.QApplication.processEvents() # UI nicht einfrieren
             if char in MORSE_CODE_DICT:
                 code = MORSE_CODE_DICT[char]
                 for symbol in code:
-                    if symbol == '.':
-                        winsound.Beep(freq, dot_time)
-                    elif symbol == '-':
-                        winsound.Beep(freq, dash_time)
-                    time.sleep(dot_time / 1000.0) # Pause zwischen Signalen
-                time.sleep(dash_time / 1000.0) # Pause zwischen Buchstaben
+                    if symbol == '.': winsound.Beep(freq, dot_time)
+                    elif symbol == '-': winsound.Beep(freq, dash_time)
+                    time.sleep(dot_time / 1000.0)
+                time.sleep(dash_time / 1000.0)
             elif char == ' ':
-                time.sleep(700 / 1000.0) # Wortpause
+                time.sleep(700 / 1000.0)
                 
         self.status_label.setText("Status: Senden beendet.")
-        self.msg_input.clear()
 
     def toggle_scan(self):
         self.is_scanning = not self.is_scanning
         if self.is_scanning:
-            self.scan_btn.setText("🛑 DECODER STOPPEN")
-            self.status_label.setText("Status: Lausche auf Morse-Code...")
+            self.scan_btn.setText("🛑 DUAL-SCANNER STOPPEN")
+            self.status_label.setText("Status: Radar sucht & Decoder lauscht...")
             self.decoded_message = ""
-            self.decoded_label.setText("Eingehende Nachricht: ")
+            self.decoded_label.setText("👽 E.T. funkt: ")
+            self.hit_counter = 0
             self.stream = sd.InputStream(callback=self.audio_callback, channels=2, 
                                         samplerate=self.fs, blocksize=self.buffer_size)
             self.stream.start()
         else:
-            self.scan_btn.setText("🔍 MORSE-DECODER STARTEN (RX)")
+            self.scan_btn.setText("🌐 DUAL-SCANNER & DECODER STARTEN")
             if hasattr(self, 'stream'):
                 self.stream.stop()
 
     def audio_callback(self, indata, frames, time_info, status):
-        if not self.is_scanning: return
-        if indata.shape[1] < 2: return 
+        if not self.is_scanning or indata.shape[1] < 2: return 
         
-        mono_mix = np.mean(indata, axis=1)
-        fft_data = np.abs(np.fft.rfft(mono_mix))[50:-50]
+        # 1. Daten für 3D-Radar (getrennt) und Decoder (gemixt) vorbereiten
+        left_ch, right_ch = indata[:, 0], indata[:, 1]
+        fft_left = np.abs(np.fft.rfft(left_ch))[50:-50]
+        fft_right = np.abs(np.fft.rfft(right_ch))[50:-50]
         
-        if len(fft_data) > 0:
-            avg_noise = np.mean(fft_data)
-            max_peak = np.max(fft_data)
-            peak_idx = np.argmax(fft_data)
-            
-            current_threshold = self.thresh_spinbox.value()
-            target_freq = self.freq_spinbox.value()
-            
-            snr = max_peak / (avg_noise + 1e-9)
-            current_freq = ((peak_idx + 50) * self.fs) / self.buffer_size
+        if len(fft_left) == 0: return
 
-            # Prüfen, ob wir ein Signal auf unserer Frequenz (+/- 100 Hz) haben
-            if snr > current_threshold and abs(current_freq - target_freq) < 100:
-                self.signal_blocks += 1
-                self.silence_blocks = 0
+        peak_l, peak_r = np.max(fft_left), np.max(fft_right)
+        max_peak = max(peak_l, peak_r)
+        
+        combined_fft = (fft_left + fft_right) / 2
+        avg_noise = np.mean(combined_fft)
+        peak_idx = np.argmax(combined_fft)
+        
+        snr = max_peak / (avg_noise + 1e-9)
+        current_freq = ((peak_idx + 50) * self.fs) / self.buffer_size
+
+        # GUI Parameter
+        current_threshold = self.thresh_spinbox.value()
+        target_freq = self.freq_spinbox.value()
+        tolerance = self.tol_spinbox.value()
+        is_signal_present = snr > current_threshold
+        is_near_target = abs(current_freq - target_freq) <= tolerance
+
+        timestamp = QtCore.QDateTime.currentDateTime().toString("hh:mm:ss")
+
+        # ==========================================
+        # ENGINE 1: DAS BREITBAND-RADAR (Sucht alles)
+        # ==========================================
+        if is_signal_present:
+            if abs(peak_idx - self.last_found_idx) < 5:
+                self.hit_counter += 1
             else:
-                # Signal ist weg, war vorher eins da?
-                if self.signal_blocks > 0:
-                    # 1 bis 3 Blöcke = Punkt (Dot)
-                    if 1 <= self.signal_blocks <= 4:
-                        self.current_symbol += "."
-                    # Mehr als 4 Blöcke = Strich (Dash)
-                    elif self.signal_blocks > 4:
-                        self.current_symbol += "-"
-                    
-                    self.signal_blocks = 0
+                self.hit_counter = 1
+            self.last_found_idx = peak_idx
+            
+            # WICHTIG: Er loggt einen Fund nur 1x beim "Einschlag", 
+            # damit das Logbuch beim Morsen nicht überläuft!
+            if self.hit_counter == 3:
+                # Richtung peilen
+                if peak_l > peak_r * 1.2: direction = "⬆️ OBEN"
+                elif peak_r > peak_l * 1.2: direction = "⬇️ UNTEN"
+                else: direction = "⚖️ ZENTRUM"
                 
-                self.silence_blocks += 1
+                prefix = "🎯 ZIEL" if is_near_target else "⚡ FUND"
+                log_text = f"[{timestamp}] {prefix}: {current_freq:.0f} Hz | {direction} (SNR: {snr:.1f})"
                 
-                # Wenn lange genug Stille ist, Buchstabe decodieren
-                if self.silence_blocks > 8 and self.current_symbol != "":
-                    letter = REVERSE_MORSE.get(self.current_symbol, "?")
-                    self.decoded_message += letter
-                    self.decoded_label.setText(f"Eingehende Nachricht: {self.decoded_message}")
-                    self.log_list.addItem(f"Decodiert: {self.current_symbol} -> {letter}")
-                    self.current_symbol = ""
+                # Update UI direkt (in kleinen Scripts meist okay)
+                QtCore.QMetaObject.invokeMethod(self.log_list, "addItem", QtCore.Q_ARG(str, log_text))
+                self.log_list.scrollToBottom()
+        else:
+            self.hit_counter = 0
+
+        # ==========================================
+        # ENGINE 2: DER E.T. MORSE DECODER (Schmalband)
+        # ==========================================
+        if is_signal_present and is_near_target:
+            self.signal_blocks += 1
+            self.silence_blocks = 0
+        else:
+            # Signal weg -> War vorher was da?
+            if self.signal_blocks > 0:
+                if 1 <= self.signal_blocks <= 4:
+                    self.current_symbol += "."
+                elif self.signal_blocks > 4:
+                    self.current_symbol += "-"
+                self.signal_blocks = 0
+            
+            self.silence_blocks += 1
+            
+            # Lange Stille -> Symbol in Buchstabe übersetzen
+            if self.silence_blocks > 8 and self.current_symbol != "":
+                letter = REVERSE_MORSE.get(self.current_symbol, "?")
+                self.decoded_message += letter
+                # UI Update über InvokeMethod (Thread-sicherer in PyQt)
+                QtCore.QMetaObject.invokeMethod(self.decoded_label, "setText", QtCore.Q_ARG(str, f"👽 E.T. funkt: {self.decoded_message}"))
+                self.current_symbol = ""
 
     def closeEvent(self, event):
         if self.ffmpeg_process:
