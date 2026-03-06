@@ -7,7 +7,6 @@ import winsound
 import time
 from PyQt5 import QtWidgets, QtCore
 
-# Das offizielle Morse-Alphabet
 MORSE_CODE_DICT = {
     'A': '.-', 'B': '-...', 'C': '-.-.', 'D': '-..', 'E': '.', 'F': '..-.', 
     'G': '--.', 'H': '....', 'I': '..', 'J': '.---', 'K': '-.-', 'L': '.-..', 
@@ -20,6 +19,12 @@ MORSE_CODE_DICT = {
 REVERSE_MORSE = {value: key for key, value in MORSE_CODE_DICT.items()}
 
 class UltraScanner(QtWidgets.QMainWindow):
+    # ==========================================
+    # NEU: Das "Funkgerät" zwischen Sound und GUI
+    # ==========================================
+    signal_new_log = QtCore.pyqtSignal(str)
+    signal_new_decode = QtCore.pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Crystal Control Center (Dual-Core E.T. Edition)")
@@ -31,13 +36,16 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.ffmpeg_process = None
         self.is_scanning = False
         
-        # Scanner & Decoder Variablen
         self.hit_counter = 0
         self.last_found_idx = -1
         self.signal_blocks = 0
         self.silence_blocks = 0
         self.current_symbol = ""
         self.decoded_message = ""
+        
+        # Signale an die Methoden koppeln
+        self.signal_new_log.connect(self.gui_add_log)
+        self.signal_new_decode.connect(self.gui_update_decode)
         
         self.init_ui()
         
@@ -52,12 +60,11 @@ class UltraScanner(QtWidgets.QMainWindow):
         self.mon_btn.clicked.connect(self.start_ffmpeg_monitor)
         layout.addWidget(self.mon_btn)
 
-        # --- Sende-Zentrale (TX) ---
         tx_group = QtWidgets.QGroupBox("📡 Sende-Zentrale (TX)")
         tx_layout = QtWidgets.QVBoxLayout()
         input_layout = QtWidgets.QHBoxLayout()
         self.msg_input = QtWidgets.QLineEdit()
-        self.msg_input.setText("E T NACH HAUS TELEFONIEREN") # Der E.T. Test-String!
+        self.msg_input.setText("E T NACH HAUS TELEFONIEREN") 
         input_layout.addWidget(self.msg_input)
         self.send_btn = QtWidgets.QPushButton("MORSE SENDEN")
         self.send_btn.setStyleSheet("background-color: #00FF00; color: black; font-weight: bold;")
@@ -67,7 +74,6 @@ class UltraScanner(QtWidgets.QMainWindow):
         tx_group.setLayout(tx_layout)
         layout.addWidget(tx_group)
 
-        # --- Empfänger-Einstellungen (RX) ---
         rx_group = QtWidgets.QGroupBox("🔍 Empfänger-Radar (RX)")
         rx_layout = QtWidgets.QVBoxLayout()
         
@@ -116,6 +122,18 @@ class UltraScanner(QtWidgets.QMainWindow):
         layout.addWidget(QtWidgets.QLabel("📜 Kristall-Radar (Alle Signale):"))
         layout.addWidget(self.log_list)
 
+    # ==========================================
+    # NEU: Sichere GUI-Update Methoden
+    # ==========================================
+    @QtCore.pyqtSlot(str)
+    def gui_add_log(self, text):
+        self.log_list.addItem(text)
+        self.log_list.scrollToBottom()
+
+    @QtCore.pyqtSlot(str)
+    def gui_update_decode(self, text):
+        self.decoded_label.setText(text)
+
     def start_ffmpeg_monitor(self):
         if getattr(sys, 'frozen', False):
             base_dir = os.path.dirname(sys.executable)
@@ -152,7 +170,7 @@ class UltraScanner(QtWidgets.QMainWindow):
         dash_time = 300 
         
         for char in text:
-            QtWidgets.QApplication.processEvents() # UI nicht einfrieren
+            QtWidgets.QApplication.processEvents() 
             if char in MORSE_CODE_DICT:
                 code = MORSE_CODE_DICT[char]
                 for symbol in code:
@@ -184,7 +202,6 @@ class UltraScanner(QtWidgets.QMainWindow):
     def audio_callback(self, indata, frames, time_info, status):
         if not self.is_scanning or indata.shape[1] < 2: return 
         
-        # 1. Daten für 3D-Radar (getrennt) und Decoder (gemixt) vorbereiten
         left_ch, right_ch = indata[:, 0], indata[:, 1]
         fft_left = np.abs(np.fft.rfft(left_ch))[50:-50]
         fft_right = np.abs(np.fft.rfft(right_ch))[50:-50]
@@ -201,7 +218,6 @@ class UltraScanner(QtWidgets.QMainWindow):
         snr = max_peak / (avg_noise + 1e-9)
         current_freq = ((peak_idx + 50) * self.fs) / self.buffer_size
 
-        # GUI Parameter
         current_threshold = self.thresh_spinbox.value()
         target_freq = self.freq_spinbox.value()
         tolerance = self.tol_spinbox.value()
@@ -211,7 +227,7 @@ class UltraScanner(QtWidgets.QMainWindow):
         timestamp = QtCore.QDateTime.currentDateTime().toString("hh:mm:ss")
 
         # ==========================================
-        # ENGINE 1: DAS BREITBAND-RADAR (Sucht alles)
+        # ENGINE 1: DAS BREITBAND-RADAR
         # ==========================================
         if is_signal_present:
             if abs(peak_idx - self.last_found_idx) < 5:
@@ -220,10 +236,7 @@ class UltraScanner(QtWidgets.QMainWindow):
                 self.hit_counter = 1
             self.last_found_idx = peak_idx
             
-            # WICHTIG: Er loggt einen Fund nur 1x beim "Einschlag", 
-            # damit das Logbuch beim Morsen nicht überläuft!
             if self.hit_counter == 3:
-                # Richtung peilen
                 if peak_l > peak_r * 1.2: direction = "⬆️ OBEN"
                 elif peak_r > peak_l * 1.2: direction = "⬇️ UNTEN"
                 else: direction = "⚖️ ZENTRUM"
@@ -231,20 +244,18 @@ class UltraScanner(QtWidgets.QMainWindow):
                 prefix = "🎯 ZIEL" if is_near_target else "⚡ FUND"
                 log_text = f"[{timestamp}] {prefix}: {current_freq:.0f} Hz | {direction} (SNR: {snr:.1f})"
                 
-                # Update UI direkt (in kleinen Scripts meist okay)
-                QtCore.QMetaObject.invokeMethod(self.log_list, "addItem", QtCore.Q_ARG(str, log_text))
-                self.log_list.scrollToBottom()
+                # Senden des sauberen Signals (statt direktem, fehleranfälligem Zugriff)
+                self.signal_new_log.emit(log_text)
         else:
             self.hit_counter = 0
 
         # ==========================================
-        # ENGINE 2: DER E.T. MORSE DECODER (Schmalband)
+        # ENGINE 2: DER E.T. MORSE DECODER
         # ==========================================
         if is_signal_present and is_near_target:
             self.signal_blocks += 1
             self.silence_blocks = 0
         else:
-            # Signal weg -> War vorher was da?
             if self.signal_blocks > 0:
                 if 1 <= self.signal_blocks <= 4:
                     self.current_symbol += "."
@@ -254,12 +265,12 @@ class UltraScanner(QtWidgets.QMainWindow):
             
             self.silence_blocks += 1
             
-            # Lange Stille -> Symbol in Buchstabe übersetzen
             if self.silence_blocks > 8 and self.current_symbol != "":
                 letter = REVERSE_MORSE.get(self.current_symbol, "?")
                 self.decoded_message += letter
-                # UI Update über InvokeMethod (Thread-sicherer in PyQt)
-                QtCore.QMetaObject.invokeMethod(self.decoded_label, "setText", QtCore.Q_ARG(str, f"👽 E.T. funkt: {self.decoded_message}"))
+                
+                # Senden des sauberen Signals für die GUI
+                self.signal_new_decode.emit(f"👽 E.T. funkt: {self.decoded_message}")
                 self.current_symbol = ""
 
     def closeEvent(self, event):
