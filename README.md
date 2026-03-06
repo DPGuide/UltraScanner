@@ -36,7 +36,8 @@ Darin liegt eine frische cosmic.exe. Das ist dein komplettes Python-Programm, la
 
 <img width="763" height="295" alt="image" src="https://github.com/user-attachments/assets/29fb83c2-2626-447f-a5c5-dc301fb72a07" />
 
-<img width="563" height="833" alt="image" src="https://github.com/user-attachments/assets/4fc1347c-02f2-4902-becc-4c1fd78d3d88" />
+<img width="556" height="883" alt="image" src="https://github.com/user-attachments/assets/521ff23c-3501-40f5-b76f-740906d9e905" />
+
 
 <img width="508" height="684" alt="image" src="https://github.com/user-attachments/assets/4d8bb2a0-098d-4c9e-b1d3-b4fb6c93d428" />
 
